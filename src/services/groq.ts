@@ -1,18 +1,39 @@
-import { TranscriptionWord, ViralShort, ProjectState } from '../types/video';
+import { TranscriptionWord, ViralShort, ProjectState, CaptionLanguage } from '../types/video';
+import { hasDevanagari, devanagariToHinglish } from '../utils/hinglish';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1';
 
 /**
  * Transcribes the audio WAV blob using Groq Whisper.
+ *
+ * `language` picks the caption output:
+ * - 'hinglish' (default): Whisper auto-detects, a prompt biases Hindi toward
+ *   Latin script, and any Devanagari that slips through is transliterated.
+ * - 'hindi': Whisper auto-detects and returns Devanagari untouched.
+ * - 'english': forces English transcription.
  */
 export async function transcribeAudio(
   audioBlob: Blob,
-  apiKey: string
+  apiKey: string,
+  language: CaptionLanguage = 'hinglish'
 ): Promise<TranscriptionWord[]> {
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.wav');
   formData.append('model', 'whisper-large-v3');
   formData.append('response_format', 'verbose_json');
+
+  if (language === 'hinglish') {
+    // Whisper auto-detects Hindi and returns Devanagari by default. A prompt
+    // biases it toward Hinglish — Hindi spoken, written in Latin script — so
+    // captions read as romanized text instead of Hindi letters.
+    formData.append(
+      'prompt',
+      'The transcript is Hinglish: Hindi words written in English/Latin letters, never Devanagari script. For example: "aaj main aapko ek important baat batata hoon".'
+    );
+  } else if (language === 'english') {
+    formData.append('language', 'en');
+  }
+  // 'hindi' leaves Whisper to auto-detect and return the native script.
 
   const response = await fetch(`${GROQ_API_URL}/audio/transcriptions`, {
     method: 'POST',
@@ -79,7 +100,15 @@ export async function transcribeAudio(
     throw new Error('No transcription text returned from Groq');
   }
 
-  return wordsList;
+  // Guarantee Hinglish captions: Whisper occasionally still returns Devanagari
+  // despite the romanization prompt, so transliterate anything that slipped
+  // through. Latin-script words are left untouched. Only applies in the
+  // Hinglish mode — Hindi-script and English modes keep Whisper's output.
+  return wordsList.map((w) =>
+    language === 'hinglish' && hasDevanagari(w.word)
+      ? { ...w, word: devanagariToHinglish(w.word) }
+      : w
+  );
 }
 
 /**
@@ -187,7 +216,9 @@ export interface AICommandResponse {
       | 'DELETE_CLIP'
       | 'UPDATE_STYLE'
       | 'HIGHLIGHT_WORDS'
+      | 'DELETE_WORDS'
       | 'ADJUST_PAN'
+      | 'SET_DRIFT'
       | 'APPLY_GRADE'
       | 'ADD_MOTION'
       | 'CLEAR_MOTION'
@@ -228,7 +259,9 @@ Supported command actions:
 - { "type": "TRIM_CLIP", "clipId": string, "start": number, "end": number }  // updates the clip start/end timings
 - { "type": "UPDATE_STYLE", "fontSize": number, "primaryColor": string, "activeWordColor": string, "uppercase": boolean, "addEmojis": boolean } // SUBTITLE TEXT styling ONLY. Colors should be hex.
 - { "type": "HIGHLIGHT_WORDS", "words": string[] } // marks specific words as highlighted in the transcript
-- { "type": "ADJUST_PAN", "clipId": string, "panOffset": number } // Adjusts horizontal video position (-100 to 100)
+- { "type": "DELETE_WORDS", "words": string[] } // cuts the listed words out of the transcript entirely ("remove the filler words")
+- { "type": "ADJUST_PAN", "clipId": string, "panOffset": number } // Adjusts horizontal video position (-100 to 100); also cancels any drift
+- { "type": "SET_DRIFT", "direction": "left" | "right" | "none" } // animated reframe: crop glides from left to right (or right to left) across the clip; "none" stops it
 - { "type": "APPLY_GRADE", "grade": "cozy-craft" | "teal-orange" | "bleach-print" | "night-neon" | "none" } // Colour grade / look of the VIDEO IMAGE
 - { "type": "ADD_MOTION", "kind": "kinetic-title" | "lower-third" | "stat-counter" | "progress-ring", "text": string?, "subtext": string?, "value": number?, "start": number?, "end": number? } // Animated graphic overlay
 - { "type": "CLEAR_MOTION", "kind": string? } // Removes one kind of motion graphic, or all of them when kind is omitted

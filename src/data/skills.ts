@@ -30,7 +30,9 @@ export type SkillCommand =
   | { type: 'ADD_SFX'; kind: string }
   | { type: 'CLEAR_SFX'; kind?: string }
   | { type: 'TRIM_CLIP'; start: number; end: number }
-  | { type: 'HIGHLIGHT_WORDS'; words: string[] };
+  | { type: 'HIGHLIGHT_WORDS'; words: string[] }
+  | { type: 'DELETE_WORDS'; words: string[] }
+  | { type: 'SET_DRIFT'; direction: 'left' | 'right' | 'none' };
 
 /** How a preset tile paints its 9:16 thumbnail. Everything is drawn in CSS/SVG
  *  so the palette stays self-contained — no thumbnail assets to ship. */
@@ -54,6 +56,8 @@ export interface PresetPreview {
     y?: number;
     align?: 'center' | 'left';
     boxed?: boolean;
+    /** Fill of the boxed label bar, e.g. '#FFD34D' (defaults to white). */
+    boxColor?: string;
   };
   /** Free-form hint used by schematic kinds (arrow direction, bar count…). */
   motif?: string;
@@ -69,6 +73,8 @@ export interface SkillPreset {
   commands?: SkillCommand[];
   /** Sent to the copilot when there are no local commands. */
   prompt?: string;
+  /** Capability the editor doesn't ship yet — shown disabled in the palette. */
+  soon?: boolean;
 }
 
 export interface Skill {
@@ -92,7 +98,8 @@ const base: CaptionStyle = {
   activeWordScale: 1.25,
   positionY: 70,
   animatePop: true,
-  addEmojis: true
+  addEmojis: true,
+  boxed: false
 };
 
 const styleCommand = (over: Partial<CaptionStyle>): SkillCommand[] => [
@@ -286,6 +293,307 @@ export const SKILLS: Skill[] = [
             y: 82
           }
         }
+      },
+      {
+        id: 'caption-karaoke-follow',
+        name: 'Karaoke Follow',
+        description: 'Inactive words sit dim while the spoken word lights up — the classic karaoke tracking style.',
+        commands: styleCommand({
+          fontFamily: 'Inter',
+          fontSize: 58,
+          primaryColor: '#8E8E8C',
+          activeWordColor: '#FFD34D',
+          strokeColor: '#000000',
+          strokeWidth: 8,
+          uppercase: true,
+          activeWordScale: 1.18,
+          positionY: 74,
+          addEmojis: false
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #4a5262, #1b1f27)',
+          subject: 'rgba(16,20,26,0.5)',
+          caption: {
+            lead: 'the',
+            main: 'WORD',
+            font: 'Inter, sans-serif',
+            accentColor: '#FFD34D',
+            uppercase: true,
+            y: 74
+          }
+        }
+      },
+      {
+        id: 'caption-subtitle-block',
+        name: 'Subtitle Block',
+        description: 'Traditional subtitle bar — a translucent dark box that reads on any footage.',
+        commands: styleCommand({
+          fontFamily: 'Inter',
+          fontSize: 52,
+          primaryColor: '#FFFFFF',
+          activeWordColor: '#FFFFFF',
+          strokeColor: '#000000',
+          strokeWidth: 6,
+          uppercase: false,
+          activeWordScale: 1.05,
+          positionY: 82,
+          animatePop: false,
+          addEmojis: false,
+          boxed: true,
+          boxColor: 'rgba(0,0,0,0.62)'
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #7a8ba0, #3d4653)',
+          subject: 'rgba(18,22,30,0.5)',
+          caption: {
+            main: 'subtitle block',
+            font: 'Inter, sans-serif',
+            color: '#FFFFFF',
+            uppercase: false,
+            boxed: true,
+            boxColor: 'rgba(0,0,0,0.72)',
+            y: 80
+          }
+        }
+      },
+      {
+        id: 'caption-red-alert',
+        name: 'Red Alert',
+        description: 'Bold sans with the punch word in red — the business-TikTok highlight style.',
+        commands: styleCommand({
+          fontFamily: 'Space Grotesk',
+          fontSize: 66,
+          primaryColor: '#FFFFFF',
+          activeWordColor: '#FF5A4E',
+          strokeColor: '#000000',
+          strokeWidth: 9,
+          uppercase: true,
+          activeWordScale: 1.3,
+          positionY: 70,
+          addEmojis: false
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #5c6575, #262b34)',
+          subject: 'rgba(16,20,26,0.5)',
+          caption: {
+            main: 'HOOK',
+            font: 'Space Grotesk, sans-serif',
+            accentColor: '#FF5A4E',
+            uppercase: true,
+            y: 70
+          }
+        }
+      },
+      {
+        id: 'caption-color-block',
+        name: 'Color Block',
+        description: 'Dark text on a solid brand-color bar — loud and instantly readable.',
+        commands: styleCommand({
+          fontFamily: 'Inter',
+          fontSize: 58,
+          primaryColor: '#0B0B0E',
+          activeWordColor: '#0B0B0E',
+          strokeColor: '#0B0B0E',
+          strokeWidth: 2,
+          uppercase: true,
+          activeWordScale: 1.1,
+          positionY: 76,
+          addEmojis: false,
+          boxed: true,
+          boxColor: '#FFD34D'
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #6d7f96, #38414f)',
+          subject: 'rgba(20,24,32,0.55)',
+          caption: {
+            main: 'NO EXCUSES',
+            font: 'Inter, sans-serif',
+            color: '#0B0B0E',
+            uppercase: true,
+            boxed: true,
+            boxColor: '#FFD34D',
+            y: 74
+          }
+        }
+      },
+      {
+        id: 'caption-mono-data',
+        name: 'Mono Data',
+        description: 'Monospace numerals and stats with a warm orange active word.',
+        commands: styleCommand({
+          fontFamily: 'JetBrains Mono',
+          fontSize: 54,
+          primaryColor: '#FFFFFF',
+          activeWordColor: '#FF9A3D',
+          strokeColor: '#000000',
+          strokeWidth: 8,
+          uppercase: true,
+          activeWordScale: 1.2,
+          positionY: 68,
+          addEmojis: false
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #2c3542, #12151b)',
+          subject: 'rgba(14,18,24,0.5)',
+          caption: {
+            main: '10,000',
+            font: 'ui-monospace, monospace',
+            accentColor: '#FF9A3D',
+            uppercase: true,
+            y: 68
+          }
+        }
+      },
+      {
+        id: 'caption-script-elegant',
+        name: 'Script Elegant',
+        description: 'Handwritten cursive for beauty, travel and lifestyle edits.',
+        commands: styleCommand({
+          fontFamily: 'Brush Script MT, Segoe Script, cursive',
+          fontSize: 64,
+          primaryColor: '#F5F1E8',
+          activeWordColor: '#F5F1E8',
+          strokeColor: '#1B1B1F',
+          strokeWidth: 2,
+          uppercase: false,
+          activeWordScale: 1.1,
+          positionY: 66,
+          animatePop: false,
+          addEmojis: false
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #b9a78e, #5c4f3e)',
+          subject: 'rgba(50,38,24,0.4)',
+          caption: {
+            main: 'wander',
+            font: 'cursive',
+            italic: true,
+            uppercase: false,
+            y: 64
+          }
+        }
+      },
+      {
+        id: 'caption-two-tone-pop',
+        name: 'Two-Tone Pop',
+        description: 'White fill with a red outline — the YouTube-punch heavyweight look.',
+        commands: styleCommand({
+          fontFamily: 'Impact',
+          fontSize: 72,
+          primaryColor: '#FFFFFF',
+          activeWordColor: '#FFFFFF',
+          strokeColor: '#FF5A4E',
+          strokeWidth: 10,
+          uppercase: true,
+          activeWordScale: 1.25,
+          positionY: 68,
+          addEmojis: false
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #4e3f3d, #201a19)',
+          subject: 'rgba(30,18,16,0.5)',
+          caption: {
+            main: 'HOLD UP',
+            font: 'Impact, sans-serif',
+            accentColor: '#FF5A4E',
+            uppercase: true,
+            y: 68
+          }
+        }
+      },
+      {
+        id: 'caption-light-invert',
+        name: 'Light Invert',
+        description: 'Black text with a white outline — stays readable on bright footage.',
+        commands: styleCommand({
+          fontFamily: 'Inter',
+          fontSize: 60,
+          primaryColor: '#111114',
+          activeWordColor: '#111114',
+          strokeColor: '#FFFFFF',
+          strokeWidth: 10,
+          uppercase: true,
+          activeWordScale: 1.2,
+          positionY: 72,
+          addEmojis: false
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #e8e4da, #9a9488)',
+          subject: 'rgba(40,38,32,0.25)',
+          caption: {
+            main: 'BRIGHT DAY',
+            font: 'Inter, sans-serif',
+            color: '#111114',
+            uppercase: true,
+            y: 72
+          }
+        }
+      },
+      {
+        id: 'caption-zoom-punch',
+        name: 'Zoom Punch',
+        description: 'The spoken word balloons huge against a minimal backdrop.',
+        commands: styleCommand({
+          fontFamily: 'Space Grotesk',
+          fontSize: 60,
+          primaryColor: '#FFFFFF',
+          activeWordColor: '#FFFFFF',
+          strokeColor: '#000000',
+          strokeWidth: 7,
+          uppercase: true,
+          activeWordScale: 1.65,
+          positionY: 68,
+          addEmojis: false
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #3a3f48, #171a1f)',
+          subject: 'rgba(16,20,26,0.45)',
+          caption: {
+            lead: 'it is a',
+            main: 'BIG',
+            font: 'Space Grotesk, sans-serif',
+            uppercase: true,
+            y: 68
+          }
+        }
+      },
+      {
+        id: 'caption-emoji-pop',
+        name: 'Emoji Pop',
+        description: 'Playful rounded captions with a reaction emoji above the punch word.',
+        commands: styleCommand({
+          fontFamily: 'Inter',
+          fontSize: 58,
+          primaryColor: '#FFFFFF',
+          activeWordColor: '#3ECF8E',
+          strokeColor: '#000000',
+          strokeWidth: 8,
+          uppercase: false,
+          activeWordScale: 1.3,
+          positionY: 74,
+          addEmojis: true
+        }),
+        preview: {
+          kind: 'caption',
+          backdrop: 'linear-gradient(165deg, #3f5a4e, #16211c)',
+          subject: 'rgba(14,24,20,0.5)',
+          caption: {
+            main: '🔥 literally fire',
+            font: 'Inter, sans-serif',
+            accentColor: '#3ECF8E',
+            uppercase: false,
+            y: 72
+          }
+        }
       }
     ]
   },
@@ -367,7 +675,7 @@ export const SKILLS: Skill[] = [
         id: 'broll-keyword-cutaway',
         name: 'Keyword Cutaway',
         description: 'Inserts a cutaway whenever a concrete noun is spoken.',
-        prompt: 'Insert b-roll cutaways on the concrete nouns in the transcript, roughly 1.5s each.',
+        soon: true,
         preview: {
           kind: 'broll',
           backdrop: 'linear-gradient(165deg, #46596b, #1a2129)',
@@ -378,7 +686,7 @@ export const SKILLS: Skill[] = [
         id: 'broll-picture-in-picture',
         name: 'Picture in Picture',
         description: 'Keeps the speaker in a corner card over the cutaway.',
-        prompt: 'Add picture-in-picture b-roll with the speaker inset in the bottom-right corner.',
+        soon: true,
         preview: {
           kind: 'broll',
           backdrop: 'linear-gradient(165deg, #3f5a5e, #161f22)',
@@ -389,7 +697,7 @@ export const SKILLS: Skill[] = [
         id: 'broll-full-bleed',
         name: 'Full Bleed',
         description: 'Cuts entirely to footage while the audio keeps running.',
-        prompt: 'Cut away to full-frame b-roll during the explanation, keeping the original audio.',
+        soon: true,
         preview: {
           kind: 'broll',
           backdrop: 'linear-gradient(165deg, #5b5140, #1f1a13)',
@@ -510,8 +818,8 @@ export const SKILLS: Skill[] = [
       {
         id: 'camera-slow-drift',
         name: 'Slow Drift',
-        description: 'Gentle horizontal drift across the shot.',
-        prompt: 'Slowly drift the 9:16 crop from left to right across the clip.',
+        description: 'Gentle horizontal drift from left to right across the shot.',
+        commands: [{ type: 'SET_DRIFT', direction: 'left' }],
         preview: {
           kind: 'camera',
           backdrop: 'linear-gradient(165deg, #4c5666, #191d24)',
@@ -531,7 +839,7 @@ export const SKILLS: Skill[] = [
         id: 'overlay-comment-card',
         name: 'Comment Card',
         description: 'Social comment bubble that pops in and settles.',
-        prompt: 'Overlay a social media comment card that pops in during the hook.',
+        commands: [{ type: 'ADD_MOTION', kind: 'comment-card', text: 'This is gold 😍', subtext: '@viral_clip' }],
         preview: {
           kind: 'overlay',
           backdrop: 'linear-gradient(165deg, #4e5a6b, #1b2027)',
@@ -543,7 +851,7 @@ export const SKILLS: Skill[] = [
         id: 'overlay-arrow-callout',
         name: 'Arrow Callout',
         description: 'Hand-drawn arrow pointing at part of the frame.',
-        prompt: 'Add a hand-drawn arrow callout pointing at the subject.',
+        commands: [{ type: 'ADD_MOTION', kind: 'arrow-callout', text: 'Look here' }],
         preview: {
           kind: 'overlay',
           backdrop: 'linear-gradient(165deg, #57606e, #1e2229)',
@@ -555,7 +863,7 @@ export const SKILLS: Skill[] = [
         id: 'overlay-emoji-burst',
         name: 'Emoji Burst',
         description: 'Reaction emojis that burst on emphasised words.',
-        prompt: 'Add an emoji burst reaction on the most emphasised word.',
+        commands: [{ type: 'ADD_MOTION', kind: 'emoji-burst', text: '🔥' }],
         preview: {
           kind: 'overlay',
           backdrop: 'linear-gradient(165deg, #6b5570, #241c28)',
@@ -587,7 +895,7 @@ export const SKILLS: Skill[] = [
         name: 'Remove Filler',
         description: 'Cuts um, uh, like and you know from the transcript.',
         commands: [
-          { type: 'HIGHLIGHT_WORDS', words: ['um', 'uh', 'like', 'you', 'know', 'basically', 'literally'] }
+          { type: 'DELETE_WORDS', words: ['um', 'uh', 'like', 'you', 'know', 'basically', 'literally'] }
         ],
         preview: {
           kind: 'cut',
@@ -672,7 +980,7 @@ export const SKILLS: Skill[] = [
         id: 'music-lofi-bed',
         name: 'Lo-fi Bed',
         description: 'Warm lo-fi loop ducked 18dB under speech.',
-        prompt: 'Add a warm lo-fi music bed ducked well under the voice track.',
+        soon: true,
         preview: {
           kind: 'audio',
           backdrop: 'linear-gradient(165deg, #4d3f5c, #18131f)',
@@ -683,7 +991,7 @@ export const SKILLS: Skill[] = [
         id: 'music-drive-beat',
         name: 'Drive Beat',
         description: 'Up-tempo percussion for fast-cut edits.',
-        prompt: 'Add an up-tempo percussive music bed suited to fast cuts.',
+        soon: true,
         preview: {
           kind: 'audio',
           backdrop: 'linear-gradient(165deg, #5c3540, #1e1015)',
@@ -694,7 +1002,7 @@ export const SKILLS: Skill[] = [
         id: 'music-ambient-pad',
         name: 'Ambient Pad',
         description: 'Sparse pad that keeps the voice front and centre.',
-        prompt: 'Add a sparse ambient pad underneath the narration.',
+        soon: true,
         preview: {
           kind: 'audio',
           backdrop: 'linear-gradient(165deg, #354a55, #111a1f)',
@@ -707,10 +1015,117 @@ export const SKILLS: Skill[] = [
 
 /** Flat index of every preset, keyed by slash slug. */
 export const PRESETS_BY_ID: Record<string, { skill: Skill; preset: SkillPreset }> = {};
-for (const skill of SKILLS) {
-  for (const preset of skill.presets) {
-    PRESETS_BY_ID[preset.id] = { skill, preset };
+
+function rebuildIndex(): void {
+  for (const key of Object.keys(PRESETS_BY_ID)) delete PRESETS_BY_ID[key];
+  for (const skill of SKILLS) {
+    for (const preset of skill.presets) {
+      PRESETS_BY_ID[preset.id] = { skill, preset };
+    }
   }
+}
+
+/* -------------------------------------------------------- custom presets --
+   Styles saved from the caption builder persist in localStorage and inject
+   themselves into the Caption skill so the palette and slash commands see
+   them exactly like the built-in ones. */
+const CUSTOM_STORAGE_KEY = 'edith.custom-caption-presets-v1';
+const CUSTOM_ID_PREFIX = 'caption-custom-';
+
+function loadCustomPresets(): SkillPreset[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (p): p is SkillPreset =>
+        !!p &&
+        typeof p.id === 'string' &&
+        p.id.startsWith(CUSTOM_ID_PREFIX) &&
+        typeof p.name === 'string' &&
+        typeof p.description === 'string' &&
+        !!p.preview
+    );
+  } catch {
+    return [];
+  }
+}
+
+function persistCustomPresets(presets: SkillPreset[]): void {
+  try {
+    localStorage.setItem(CUSTOM_STORAGE_KEY, JSON.stringify(presets));
+  } catch {
+    // storage unavailable (private mode / quota) — save is best-effort
+  }
+}
+
+const captionSkill = SKILLS.find((s) => s.id === 'caption');
+if (captionSkill) {
+  captionSkill.presets.push(...loadCustomPresets());
+}
+rebuildIndex();
+
+/** Derives a palette thumbnail from a caption style. */
+function previewFromStyle(style: CaptionStyle): PresetPreview {
+  return {
+    kind: 'caption',
+    backdrop: 'linear-gradient(165deg, #4c5666, #191d24)',
+    subject: 'rgba(16,20,26,0.5)',
+    caption: {
+      main: 'Aa',
+      font: style.fontFamily,
+      color: style.primaryColor,
+      accentColor: style.activeWordColor,
+      uppercase: style.uppercase,
+      boxed: style.boxed,
+      boxColor: style.boxColor,
+      y: Math.min(90, Math.max(20, style.positionY ?? 70))
+    }
+  };
+}
+
+const slugify = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32) || 'custom';
+
+/** Builds a palette-ready custom preset from the current caption style. */
+export function buildCustomCaptionPreset(name: string, style: CaptionStyle): SkillPreset {
+  const clean = name.trim() || 'Custom Style';
+  return {
+    id: `${CUSTOM_ID_PREFIX}${slugify(clean)}-${Date.now().toString(36)}`,
+    name: clean,
+    description: 'Custom style saved from the caption builder.',
+    commands: [{ type: 'UPDATE_STYLE', ...style }],
+    preview: previewFromStyle(style)
+  };
+}
+
+/** Persists a new custom preset and adds it to the Caption skill. */
+export function saveCustomCaptionPreset(preset: SkillPreset): void {
+  const caption = SKILLS.find((s) => s.id === 'caption');
+  if (!caption) return;
+  caption.presets.push(preset);
+  persistCustomPresets(listCustomCaptionPresets());
+  rebuildIndex();
+}
+
+/** Saved custom presets, newest last. */
+export function listCustomCaptionPresets(): SkillPreset[] {
+  const caption = SKILLS.find((s) => s.id === 'caption');
+  return (caption?.presets ?? []).filter((p) => p.id.startsWith(CUSTOM_ID_PREFIX));
+}
+
+/** Removes a saved custom preset from storage and the palette. */
+export function deleteCustomCaptionPreset(id: string): void {
+  const caption = SKILLS.find((s) => s.id === 'caption');
+  if (!caption) return;
+  caption.presets = caption.presets.filter((p) => p.id !== id);
+  persistCustomPresets(listCustomCaptionPresets());
+  rebuildIndex();
 }
 
 /** Pulls a leading `/slug` off a composer message. */

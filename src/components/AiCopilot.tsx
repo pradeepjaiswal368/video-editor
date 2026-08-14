@@ -129,6 +129,26 @@ export const AiCopilot: React.FC<AiCopilotProps> = ({
       return;
     }
 
+    // Capabilities the editor doesn't ship yet answer directly, no API round trip.
+    if (slash?.preset.soon && !slash.rest) {
+      setInputValue('');
+      closeMenu();
+
+      onAddChatMessage({
+        id: `msg-${Date.now()}`,
+        sender: 'user',
+        text,
+        timestamp: now()
+      });
+      onAddChatMessage({
+        id: `msg-${Date.now() + 1}`,
+        sender: 'ai',
+        text: `${slash.preset.name} isn't available yet — the editor doesn't ship ${slash.skill.name.toLowerCase()} yet. Pick one of the ready skills instead.`,
+        timestamp: now()
+      });
+      return;
+    }
+
     if (!apiKey) {
       alert('Please enter a Groq API Key first at the top of the page.');
       return;

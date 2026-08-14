@@ -1,6 +1,27 @@
-import React, { useState } from 'react';
-import { TranscriptionWord, CaptionStyle } from '../types/video';
-import { Trash, Edit, RefreshCw, Check, Sparkles, Sliders } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { TranscriptionWord, CaptionStyle, CaptionLanguage } from '../types/video';
+import { Trash, Edit, RefreshCw, Check, Sparkles, Sliders, Save, X } from 'lucide-react';
+import { CaptionLanguagePicker } from './CaptionLanguagePicker';
+import { renderCaptionPhrase } from '../utils/captionRender';
+import {
+  buildCustomCaptionPreset,
+  saveCustomCaptionPreset,
+  listCustomCaptionPresets,
+  deleteCustomCaptionPreset
+} from '../data/skills';
+
+/* Fonts the style builder offers. Self-hosted families render everywhere;
+   the rest fall back to system fonts (as the built-in presets already do). */
+const FONT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'Inter', label: 'Inter — clean sans' },
+  { value: 'Space Grotesk', label: 'Space Grotesk — display' },
+  { value: 'JetBrains Mono', label: 'JetBrains Mono — mono' },
+  { value: 'Impact', label: 'Impact — heavy' },
+  { value: 'Georgia', label: 'Georgia — serif' },
+  { value: 'Arial', label: 'Arial' },
+  { value: 'Brush Script MT, Segoe Script, cursive', label: 'Cursive — script' },
+  { value: 'monospace', label: 'Monospace — generic' }
+];
 
 interface TranscriptEditorProps {
   transcription: TranscriptionWord[];
@@ -9,6 +30,12 @@ interface TranscriptEditorProps {
   onChangeStyle: (style: CaptionStyle) => void;
   onUpdateWord: (index: number, updated: Partial<TranscriptionWord>) => void;
   onSeek: (time: number) => void;
+  /** Re-runs the whisper + curation pipeline on the loaded media. */
+  onRetranscribe?: () => void;
+  retranscribing?: boolean;
+  /** Caption output language; applied on the next transcription run. */
+  captionLanguage?: CaptionLanguage;
+  onChangeCaptionLanguage?: (lang: CaptionLanguage) => void;
 }
 
 export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
@@ -17,7 +44,11 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   captionStyle,
   onChangeStyle,
   onUpdateWord,
-  onSeek
+  onSeek,
+  onRetranscribe,
+  retranscribing,
+  captionLanguage,
+  onChangeCaptionLanguage
 }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
@@ -99,6 +130,55 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
     onUpdateWord(index, { deleted: !isDeleted });
   };
 
+  /* --------------------------------------------------- style builder ----- */
+  const previewRef = useRef<HTMLCanvasElement | null>(null);
+  const [saveName, setSaveName] = useState('');
+  const [savedTick, setSavedTick] = useState(0);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  // Live preview mirrors the exact renderer used by the player and export.
+  useEffect(() => {
+    const canvas = previewRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // Fake footage: gradient frame + subject silhouette.
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, '#3a4150');
+    g.addColorStop(1, '#101216');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(W * 0.5, H * 0.24, W * 0.21, H * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sample phrase: the transcript's opening words when available.
+    const source = transcription.filter((w) => !w.deleted);
+    const fallback = ['This', 'is', 'your', 'caption'].map((word, i) => ({
+      word, start: i, end: i + 1, highlighted: false, deleted: false
+    }));
+    const words = source.length >= 2 ? source.slice(0, 5) : fallback;
+    const middle = words[Math.floor((words.length - 1) / 2)];
+    renderCaptionPhrase(ctx, words, captionStyle, (middle.start + middle.end) / 2, W, H);
+  }, [captionStyle, transcription]);
+
+  const handleSavePreset = () => {
+    const preset = buildCustomCaptionPreset(saveName, captionStyle);
+    saveCustomCaptionPreset(preset);
+    setSaveName('');
+    setSavedTick((t) => t + 1);
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1600);
+  };
+
+  const applyStyleFromPreset = (style: Partial<CaptionStyle>) => {
+    onChangeStyle({ ...captionStyle, ...style });
+  };
+
   return (
     <div className="transcript-panel">
       {/* Tabs */}
@@ -117,6 +197,27 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
           <Sliders size={16} />
           Caption Style
         </button>
+
+        {onChangeCaptionLanguage && captionLanguage && (
+          <CaptionLanguagePicker
+            value={captionLanguage}
+            onChange={onChangeCaptionLanguage}
+            disabled={retranscribing}
+          />
+        )}
+
+        {onRetranscribe && (
+          <button
+            type="button"
+            className="retranscribe-btn"
+            onClick={onRetranscribe}
+            disabled={retranscribing}
+            title="Re-run Whisper transcription on the loaded video"
+          >
+            <RefreshCw size={12} className={retranscribing ? 'is-spinning' : ''} />
+            {retranscribing ? 'Transcribing…' : 'Re-transcribe'}
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -186,6 +287,86 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
 
         {activeTab === 'style' && (
           <div className="style-settings">
+            {/* Custom Style Builder — live preview + save as palette preset */}
+            <div className="style-section builder-section">
+              <label>Custom Style — Live Preview</label>
+              <div className="builder-layout">
+                <canvas ref={previewRef} className="caption-builder-preview" width={180} height={320} />
+                <div className="builder-controls">
+                  <p className="builder-hint">
+                    Tune the controls below and save the look as a preset — it appears in the
+                    ⚡ Skills → Caption palette and works as a slash command.
+                  </p>
+
+                  <div className="builder-save-row">
+                    <input
+                      type="text"
+                      className="builder-name-input"
+                      placeholder="Preset name (e.g. Money Shot)"
+                      value={saveName}
+                      onChange={(e) => setSaveName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSavePreset()}
+                      maxLength={40}
+                    />
+                    <button
+                      type="button"
+                      className="builder-save-btn"
+                      onClick={handleSavePreset}
+                      title="Save as a new preset in the Skills palette"
+                    >
+                      <Save size={12} />
+                      {savedFlash ? 'Saved!' : 'Save Preset'}
+                    </button>
+                  </div>
+
+                  <div className="custom-presets-list" key={savedTick}>
+                    {listCustomCaptionPresets().length === 0 ? (
+                      <span className="custom-presets-empty">No saved custom styles yet.</span>
+                    ) : (
+                      listCustomCaptionPresets().map((p) => (
+                        <div key={p.id} className="custom-preset-row">
+                          <button
+                            type="button"
+                            className="custom-preset-apply"
+                            onClick={() => {
+                              const cmd = p.commands?.[0] as (Partial<CaptionStyle> & { type?: string }) | undefined;
+                              if (cmd) {
+                                const { type: _type, ...style } = cmd;
+                                applyStyleFromPreset(style);
+                              }
+                            }}
+                            title="Apply this style"
+                          >
+                            <span
+                              className="custom-preset-dot"
+                              style={{
+                                background:
+                                  p.preview.caption?.accentColor ||
+                                  p.preview.caption?.color ||
+                                  '#fff'
+                              }}
+                            />
+                            {p.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="custom-preset-delete"
+                            title="Delete this preset"
+                            onClick={() => {
+                              deleteCustomCaptionPreset(p.id);
+                              setSavedTick((t) => t + 1);
+                            }}
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Presets Row */}
             <div className="style-section">
               <label>Layout Presets</label>
@@ -216,6 +397,24 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
 
             {/* Custom Control Sliders */}
             <div className="style-section">
+              <label>Font Family</label>
+              <select
+                className="style-font-select"
+                value={FONT_OPTIONS.some((f) => f.value === captionStyle.fontFamily) ? captionStyle.fontFamily : ''}
+                onChange={(e) => e.target.value && applyStyleFromPreset({ fontFamily: e.target.value })}
+              >
+                {!FONT_OPTIONS.some((f) => f.value === captionStyle.fontFamily) && (
+                  <option value="">{captionStyle.fontFamily || '— custom font —'}</option>
+                )}
+                {FONT_OPTIONS.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="style-section">
               <label>Font Size ({captionStyle.fontSize}px)</label>
               <input
                 type="range"
@@ -223,6 +422,19 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                 max="120"
                 value={captionStyle.fontSize}
                 onChange={e => onChangeStyle({ ...captionStyle, fontSize: parseInt(e.target.value) })}
+                className="style-range"
+              />
+            </div>
+
+            <div className="style-section">
+              <label>Active Word Scale ({captionStyle.activeWordScale.toFixed(2)}×)</label>
+              <input
+                type="range"
+                min="1"
+                max="2"
+                step="0.05"
+                value={captionStyle.activeWordScale}
+                onChange={e => onChangeStyle({ ...captionStyle, activeWordScale: parseFloat(e.target.value) })}
                 className="style-range"
               />
             </div>
@@ -313,6 +525,18 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
                   onChange={e => onChangeStyle({ ...captionStyle, animatePop: e.target.checked })}
                 />
                 Scale Active Word (Pop effect)
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={!!captionStyle.boxed}
+                  onChange={e => onChangeStyle({
+                    ...captionStyle,
+                    boxed: e.target.checked,
+                    boxColor: captionStyle.boxColor || 'rgba(0,0,0,0.62)'
+                  })}
+                />
+                Background Box (subtitle bar)
               </label>
             </div>
           </div>

@@ -2,6 +2,15 @@ import type { MotionOverlay } from '../data/motion';
 import type { SfxCue } from '../data/sfx';
 export type { MotionOverlay, SfxCue };
 
+/** Caption output language/script, chosen before transcribing. */
+export type CaptionLanguage = 'hinglish' | 'hindi' | 'english';
+
+export const CAPTION_LANGUAGES: { id: CaptionLanguage; label: string; hint: string }[] = [
+  { id: 'hinglish', label: 'Hinglish', hint: 'Hindi spoken, romanized in Latin letters' },
+  { id: 'hindi', label: 'Hindi script', hint: 'Hindi in Devanagari letters' },
+  { id: 'english', label: 'English', hint: 'English transcription' }
+];
+
 export interface MediaAsset {
   id: string;
   name: string;
@@ -37,6 +46,7 @@ export interface VideoClip {
   end: number;           // cut end from source video (seconds)
   timelineStart: number; // position on active timeline (seconds)
   panOffset: number;     // horizontal shift for 9:16 reframe (-100 to 100)
+  panDrift?: 'left' | 'right' | null; // animated reframe: crop glides across the frame while the clip plays
   volume: number;        // 0 to 1
   filter?: string;       // css filter style like 'grayscale(1)'
   grade?: string;        // Scene Restyle grade id, see data/grades.ts
@@ -70,6 +80,10 @@ export interface CaptionStyle {
   positionY: number; // % from top (0-100)
   animatePop: boolean;
   addEmojis: boolean;
+  /** Draw a rounded bar behind the whole phrase (subtitle-block styles). */
+  boxed?: boolean;
+  /** Bar fill — any CSS color, e.g. 'rgba(0,0,0,0.62)' or '#FFD34D'. */
+  boxColor?: string;
 }
 
 export interface ProjectState {

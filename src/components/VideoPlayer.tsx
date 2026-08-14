@@ -3,6 +3,7 @@ import { ProjectState, TranscriptionWord, VideoClip } from '../types/video';
 import { Play, Pause, RotateCcw, Volume2, VolumeX, Maximize } from 'lucide-react';
 import { GRADES, GRADE_NONE, paintGradeOverlays } from '../data/grades';
 import { drawMotionOverlays } from '../data/motion';
+import { renderCaptionPhrase } from '../utils/captionRender';
 import { SfxKind, renderSfx } from '../data/sfx';
 
 interface VideoPlayerProps {
@@ -230,9 +231,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       // Target aspect ratio is 9:16
       const targetWidth = videoHeight * (9 / 16);
       
-      // Calculate crop shift based on current clip's panOffset
+      // Calculate crop shift based on current clip's panOffset, or the
+      // animated drift position when the clip is set to glide across the frame.
       const activeInfo = getActiveClipAtTime(v.currentTime);
-      const panOffset = activeInfo?.clip?.panOffset ?? 0; // -100 to 100
+      const clip = activeInfo?.clip;
+      let panOffset = clip?.panOffset ?? 0; // -100 to 100
+      if (clip?.panDrift && clip.end > clip.start) {
+        const local = Math.max(0, Math.min(1, (activeInfo!.localTime - clip.start) / (clip.end - clip.start)));
+        // 'left' drifts from the left edge to the right edge (and vice versa).
+        panOffset = clip.panDrift === 'left' ? -100 + 200 * local : 100 - 200 * local;
+      }
       
       const maxShift = (videoWidth - targetWidth) / 2;
       const shift = (panOffset / 100) * maxShift;
@@ -269,81 +277,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         const windowSize = 3;
         const startIdx = Math.max(0, wordIndex - Math.floor(windowSize / 2));
         const endIdx = Math.min(transcription.length - 1, startIdx + windowSize - 1);
-        
+
         const phraseWords = transcription.slice(startIdx, endIdx + 1).filter(w => !w.deleted);
-        
-        // Font setups
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        
-        const fontName = captionStyle.fontFamily || 'Montserrat, Impact, sans-serif';
-        const rawFontSize = captionStyle.fontSize || 60; // px on 1080 canvas
-        const strokeColor = captionStyle.strokeColor || '#000000';
-        const strokeWidth = captionStyle.strokeWidth || 8;
-        
-        // Calculate Y position
-        const yPos = (captionStyle.positionY / 100) * c.height;
-        
-        /* Canvas only accepts numeric or standard CSS weights here — the
-           keyword `black` is invalid, and an invalid font string makes the
-           browser silently keep the previous font. That is why active-word
-           scaling never took effect. */
-        const scale =
-          captionStyle.animatePop === false ? 1 : captionStyle.activeWordScale || 1.25;
-
-        const fontFor = (active: boolean) =>
-          active ? `900 ${rawFontSize * scale}px ${fontName}` : `700 ${rawFontSize}px ${fontName}`;
-
-        // Pass 1 — measure every word with the font it will actually be drawn
-        // in, so a scaled-up active word can't throw the centring off.
-        const gap = rawFontSize * 0.3;
-        const items = phraseWords.map((w) => {
-          const active = curTime >= w.start && curTime <= w.end;
-          const text = captionStyle.uppercase ? w.word.toUpperCase() : w.word;
-          context.font = fontFor(active);
-          return { text, active, word: w.word, width: context.measureText(text).width };
-        });
-
-        const totalWidth =
-          items.reduce((sum, it) => sum + it.width, 0) + gap * Math.max(0, items.length - 1);
-
-        // Pass 2 — draw.
-        let cursorX = (c.width - totalWidth) / 2;
-
-        items.forEach((it) => {
-          context.save();
-          context.font = fontFor(it.active);
-          context.fillStyle = it.active
-            ? captionStyle.activeWordColor || '#FFE600'
-            : captionStyle.primaryColor || '#FFFFFF';
-
-          const centerX = cursorX + it.width / 2;
-
-          if (strokeWidth > 0) {
-            context.strokeStyle = strokeColor;
-            context.lineWidth = strokeWidth;
-            context.lineJoin = 'round';
-            context.miterLimit = 2;
-            context.strokeText(it.text, centerX, yPos);
-          }
-          context.fillText(it.text, centerX, yPos);
-          context.restore();
-
-          // Emoji sits above the phrase in its own font, drawn outside the
-          // word's font state so it cannot leak into the next word.
-          if (it.active && captionStyle.addEmojis) {
-            const emoji = getEmojiForWord(it.word);
-            if (emoji) {
-              context.save();
-              context.font = `${rawFontSize * 1.5}px Arial`;
-              context.fillStyle = '#FFFFFF';
-              context.fillText(emoji, c.width / 2, yPos - rawFontSize * 2);
-              context.restore();
-            }
-          }
-
-          cursorX += it.width + gap;
-        });
+        renderCaptionPhrase(context, phraseWords, captionStyle, curTime, c.width, c.height, getEmojiForWord);
       }
 
       /* 2b. Motion graphics sit above the captions and are driven by the

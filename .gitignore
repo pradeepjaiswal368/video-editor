@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Freebuff app state (local sqlite db, run notes)
+.freebuff/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

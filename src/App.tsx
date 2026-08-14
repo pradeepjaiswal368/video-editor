@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ProjectState, MediaAsset, TranscriptionWord, VideoClip, ChatMessage, CaptionStyle, ViralShort } from './types/video';
+import { ProjectState, MediaAsset, TranscriptionWord, VideoClip, ChatMessage, CaptionStyle, ViralShort, CaptionLanguage } from './types/video';
 import { extractAudio } from './utils/audio';
 import { transcribeAudio, curateShorts } from './services/groq';
 import { VideoPlayer } from './components/VideoPlayer';
 import { TranscriptEditor } from './components/TranscriptEditor';
+import { CaptionLanguagePicker } from './components/CaptionLanguagePicker';
 import { ClipList } from './components/ClipList';
 import { AiCopilot } from './components/AiCopilot';
 import { Exporter } from './components/Exporter';
@@ -26,7 +27,8 @@ const DEFAULT_CAPTION_STYLE: CaptionStyle = {
   activeWordScale: 1.25,
   positionY: 70,
   animatePop: true,
-  addEmojis: true
+  addEmojis: true,
+  boxed: false
 };
 
 const SAMPLE_VIDEO_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4';
@@ -53,7 +55,9 @@ const CAPTION_STYLE_FIELDS: Record<keyof CaptionStyle, 'string' | 'number' | 'bo
   positionY: 'number',
   uppercase: 'boolean',
   animatePop: 'boolean',
-  addEmojis: 'boolean'
+  addEmojis: 'boolean',
+  boxed: 'boolean',
+  boxColor: 'string'
 };
 
 function pickCaptionStyleFields(cmd: Record<string, unknown>): Partial<CaptionStyle> {
@@ -90,6 +94,9 @@ export const App: React.FC = () => {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isProcessingAi, setIsProcessingAi] = useState(false);
   const [transcribeProgress, setTranscribeProgress] = useState(0);
+  // Caption output language — Hinglish, Hindi script, or English. Applied on
+  // the next transcription run (initial or Re-transcribe).
+  const [captionLanguage, setCaptionLanguage] = useState<CaptionLanguage>('hinglish');
   
   // Custom states for curated shorts list
   const [shorts, setShorts] = useState<ViralShort[]>([]);
@@ -427,7 +434,7 @@ export const App: React.FC = () => {
       setTranscribeProgress(60); // transcribing on groq
 
       // Send to Groq Whisper
-      const words = await transcribeAudio(audioBlob, apiKey);
+      const words = await transcribeAudio(audioBlob, apiKey, captionLanguage);
       setTranscription(words);
       setTranscribeProgress(80); // curating viral moments
 
@@ -633,10 +640,23 @@ export const App: React.FC = () => {
           break;
         }
         case 'ADJUST_PAN': {
+          // An explicit pan is a fixed crop, so it also cancels any drift.
           setClips((prevClips) =>
             prevClips.map((c) =>
               c.id === activeClipId || c.id === cmd.clipId
-                ? { ...c, panOffset: Number(cmd.panOffset) }
+                ? { ...c, panOffset: Number(cmd.panOffset), panDrift: null }
+                : c
+            )
+          );
+          break;
+        }
+        case 'SET_DRIFT': {
+          // Animated reframe: the crop glides across the frame while playing.
+          const dir = cmd.direction === 'left' || cmd.direction === 'right' ? cmd.direction : null;
+          setClips((prevClips) =>
+            prevClips.map((c) =>
+              c.id === activeClipId || c.id === cmd.clipId
+                ? { ...c, panDrift: dir, panOffset: 0 }
                 : c
             )
           );
@@ -660,6 +680,19 @@ export const App: React.FC = () => {
                 (hw) => w.word.toLowerCase().replace(/[^a-z]/g, '') === hw.toLowerCase().replace(/[^a-z]/g, '')
               );
               return matches ? { ...w, highlighted: true } : w;
+            })
+          );
+          break;
+        }
+        case 'DELETE_WORDS': {
+          // Rough Cut · Remove Filler: cut the listed words out of the video.
+          const wordsToDelete: string[] = cmd.words || [];
+          setTranscription((prevWords) =>
+            prevWords.map((w) => {
+              const matches = wordsToDelete.some(
+                (hw) => w.word.toLowerCase().replace(/[^a-z]/g, '') === hw.toLowerCase().replace(/[^a-z]/g, '')
+              );
+              return matches ? { ...w, deleted: true } : w;
             })
           );
           break;
@@ -764,6 +797,12 @@ export const App: React.FC = () => {
                     Edith will analyze your video's audio, generate precise captions, and run our LLaMA viral moments pipeline to propose short-form clips with high hook indices.
                   </p>
 
+                  <CaptionLanguagePicker
+                    value={captionLanguage}
+                    onChange={setCaptionLanguage}
+                    disabled={isTranscribing}
+                  />
+
                   {isTranscribing ? (
                     <div className="progress-container">
                       <div className="spinner"></div>
@@ -793,6 +832,10 @@ export const App: React.FC = () => {
                     const video = document.querySelector('.canvas-container video') as HTMLVideoElement;
                     if (video) video.currentTime = t;
                   }}
+                  onRetranscribe={handleStartPipeline}
+                  retranscribing={isTranscribing}
+                  captionLanguage={captionLanguage}
+                  onChangeCaptionLanguage={setCaptionLanguage}
                 />
               )}
 
@@ -852,7 +895,7 @@ export const App: React.FC = () => {
               <h2>AI Producer</h2>
             </div>
             
-            <h1 className="landing-title">Turn long videos into viral clips with Groq</h1>
+            <h1 className="landing-title">Turn long videos into viral clips with <em>Groq</em></h1>
             <p className="landing-desc">
               Upload your video, extract speech with Groq Whisper, and let LLaMA auto-crop to 9:16 vertical shorts with engaging kinetic captions.
             </p>

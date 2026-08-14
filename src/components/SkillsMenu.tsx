@@ -161,7 +161,7 @@ export const SkillsMenu: React.FC<SkillsMenuProps> = ({
           return true;
 
         case 'Enter':
-          if (preset) {
+          if (preset && !preset.soon) {
             onPick(skill, preset);
             return true;
           }
@@ -231,13 +231,15 @@ export const SkillsMenu: React.FC<SkillsMenuProps> = ({
                     key={p.id}
                     type="button"
                     data-active={active}
-                    className={`preset-tile ${active ? 'active' : ''}`}
+                    disabled={!!p.soon}
+                    className={`preset-tile ${active ? 'active' : ''} ${p.soon ? 'is-soon' : ''}`}
                     onMouseMove={hoverPreset(i)}
-                    onClick={() => onPick(skill, p)}
-                    title={p.description}
+                    onClick={() => !p.soon && onPick(skill, p)}
+                    title={p.soon ? `${p.description} — coming soon` : p.description}
                   >
                     <PresetPreview spec={p.preview} />
                     <span className="preset-tile-name">{p.id}</span>
+                    {p.soon && <span className="preset-soon-badge">Soon</span>}
                   </button>
                 );
               })
@@ -249,9 +251,15 @@ export const SkillsMenu: React.FC<SkillsMenuProps> = ({
       {/* Footer mirrors the highlighted preset's slash command */}
       <div className="skills-foot">
         {preset ? (
-          <span className="skills-foot-hint">
-            Use <code>/{preset.id}</code> in your video
-          </span>
+          preset.soon ? (
+            <span className="skills-foot-hint is-soon">
+              {preset.name} is coming soon
+            </span>
+          ) : (
+            <span className="skills-foot-hint">
+              Use <code>/{preset.id}</code> in your video
+            </span>
+          )
         ) : (
           <span className="skills-foot-hint">Type to filter presets</span>
         )}

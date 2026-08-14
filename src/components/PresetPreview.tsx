@@ -135,7 +135,8 @@ export const PresetPreview: React.FC<{ spec: PreviewSpec }> = ({ spec }) => {
               fontFamily: c.font,
               color: c.accentColor || c.color || '#fff',
               fontStyle: c.italic ? 'italic' : undefined,
-              textTransform: c.uppercase ? 'uppercase' : 'none'
+              textTransform: c.uppercase ? 'uppercase' : 'none',
+              background: c.boxed && c.boxColor ? c.boxColor : undefined
             }}
           >
             {c.main}
