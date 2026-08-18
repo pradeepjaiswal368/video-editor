@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { TranscriptionWord, CaptionStyle, CaptionLanguage } from '../types/video';
 import { Trash, Edit, RefreshCw, Check, Sparkles, Sliders, Save, X } from 'lucide-react';
 import { CaptionLanguagePicker } from './CaptionLanguagePicker';
+import { GlossaryInput } from './GlossaryInput';
 import { renderCaptionPhrase } from '../utils/captionRender';
 import {
   buildCustomCaptionPreset,
@@ -36,6 +37,11 @@ interface TranscriptEditorProps {
   /** Caption output language; applied on the next transcription run. */
   captionLanguage?: CaptionLanguage;
   onChangeCaptionLanguage?: (lang: CaptionLanguage) => void;
+  /** Creator vocabulary + accuracy toggle, shared with the trigger screen. */
+  glossary?: string[];
+  onGlossaryChange?: (terms: string[]) => void;
+  fixCaptions?: boolean;
+  onFixCaptionsChange?: (on: boolean) => void;
 }
 
 export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
@@ -48,7 +54,11 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
   onRetranscribe,
   retranscribing,
   captionLanguage,
-  onChangeCaptionLanguage
+  onChangeCaptionLanguage,
+  glossary,
+  onGlossaryChange,
+  fixCaptions,
+  onFixCaptionsChange
 }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editText, setEditText] = useState('');
@@ -227,7 +237,18 @@ export const TranscriptEditor: React.FC<TranscriptEditorProps> = ({
             <div className="transcript-instructions">
               💡 <span>Click a word to seek the preview. Hover to edit spelling or cut/delete that word from video playback.</span>
             </div>
-            
+
+            {glossary && onGlossaryChange && fixCaptions !== undefined && onFixCaptionsChange && (
+              <GlossaryInput
+                glossary={glossary}
+                onChange={onGlossaryChange}
+                fixCaptions={fixCaptions}
+                onChangeFixCaptions={onFixCaptionsChange}
+                disabled={retranscribing}
+                compact
+              />
+            )}
+
             <div className="words-flow">
               {transcription.length === 0 ? (
                 <div className="empty-transcript">

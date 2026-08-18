@@ -870,6 +870,116 @@ svg { stroke-linecap: round; stroke-linejoin: round; }
   color: var(--text-hi);
 }
 
+/* Creator vocabulary + AI accuracy pass ----------------------------------- */
+.glossary-box {
+  width: 100%;
+  margin: 0 0 16px;
+  border: 1px solid var(--stroke-mid);
+  border-radius: var(--r-md);
+  background: var(--bg-panel);
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.glossary-box.compact {
+  margin: 0 0 14px;
+  padding: 10px;
+  border-radius: var(--r-sm);
+}
+
+.glossary-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  margin-bottom: 8px;
+}
+
+.glossary-header svg { color: var(--accent); }
+
+.glossary-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 46px;
+  background: var(--bg-app);
+  border: 1px solid var(--stroke-mid);
+  border-radius: var(--r-sm);
+  color: var(--text-hi);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color var(--t);
+  box-sizing: border-box;
+}
+
+.glossary-input:focus { border-color: var(--accent-line); }
+.glossary-input::placeholder { color: var(--text-faint); }
+.glossary-input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.glossary-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.glossary-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--stroke-mid);
+  border-radius: var(--r-sm);
+  color: var(--text-hi);
+  font-family: var(--display);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color var(--t), background-color var(--t), color var(--t);
+}
+
+.glossary-save-btn:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  background-color: var(--bg-panel-2);
+}
+
+.glossary-save-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.glossary-fix {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-lo);
+  cursor: pointer;
+  user-select: none;
+}
+
+.glossary-fix:hover { color: var(--text-hi); background: none; }
+
+.glossary-fix input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* Custom style builder ------------------------------------------------ */
 .builder-section {
   border: 1px solid var(--stroke-mid);

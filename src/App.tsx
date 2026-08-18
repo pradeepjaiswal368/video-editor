@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ProjectState, MediaAsset, TranscriptionWord, VideoClip, ChatMessage, CaptionStyle, ViralShort, CaptionLanguage } from './types/video';
 import { extractAudio } from './utils/audio';
-import { transcribeAudio, curateShorts } from './services/groq';
+import { transcribeAudio, curateShorts, correctTranscription } from './services/groq';
 import { VideoPlayer } from './components/VideoPlayer';
 import { TranscriptEditor } from './components/TranscriptEditor';
+import { GlossaryInput } from './components/GlossaryInput';
 import { CaptionLanguagePicker } from './components/CaptionLanguagePicker';
 import { ClipList } from './components/ClipList';
 import { AiCopilot } from './components/AiCopilot';
@@ -97,6 +98,23 @@ export const App: React.FC = () => {
   // Caption output language — Hinglish, Hindi script, or English. Applied on
   // the next transcription run (initial or Re-transcribe).
   const [captionLanguage, setCaptionLanguage] = useState<CaptionLanguage>('hinglish');
+
+  // Creator vocabulary — names, brands, slang injected into Whisper and the
+  // correction pass so desi captions spell them right. Persists across loads.
+  const [glossary, setGlossary] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('edith_glossary');
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Post-transcription AI accuracy pass (romanization / spelling / hallucinated
+  // words). Costs one LLaMA call, so it can be switched off.
+  const [fixCaptions, setFixCaptions] = useState<boolean>(
+    () => localStorage.getItem('edith_fix_captions') !== 'off'
+  );
   
   // Custom states for curated shorts list
   const [shorts, setShorts] = useState<ViralShort[]>([]);
@@ -341,6 +359,16 @@ export const App: React.FC = () => {
     localStorage.setItem('groq_api_key', val);
   };
 
+  // Creator vocabulary + accuracy-pass toggle, both persisted.
+  const handleGlossaryChange = (terms: string[]) => {
+    setGlossary(terms);
+    localStorage.setItem('edith_glossary', JSON.stringify(terms));
+  };
+  const handleFixCaptionsChange = (on: boolean) => {
+    setFixCaptions(on);
+    localStorage.setItem('edith_fix_captions', on ? 'on' : 'off');
+  };
+
   // Helper to load video metadata and initialize default clip
   const initializeMedia = (name: string, url: string, file?: File, duration?: number) => {
     const asset: MediaAsset = {
@@ -433,9 +461,27 @@ export const App: React.FC = () => {
 
       setTranscribeProgress(60); // transcribing on groq
 
-      // Send to Groq Whisper
-      const words = await transcribeAudio(audioBlob, apiKey, captionLanguage);
+      // Send to Groq Whisper (glossary terms act as vocabulary hints)
+      const words = await transcribeAudio(audioBlob, apiKey, captionLanguage, glossary);
       setTranscription(words);
+      setTranscribeProgress(68);
+
+      // Post-transcription accuracy pass: LLaMA fixes romanization, spelling,
+      // punctuation and hallucinated words while keeping Whisper's timings.
+      // Non-fatal — if it fails, captions stay as Whisper wrote them.
+      if (fixCaptions) {
+        try {
+          const corrected = await correctTranscription(words, apiKey, captionLanguage, glossary);
+          setTranscription(corrected.words);
+          console.info(
+            `Caption accuracy pass: corrected ${corrected.changedCount} of ${words.length} words.`
+          );
+        } catch (err) {
+          console.warn('Caption accuracy pass skipped:', err);
+          setTranscription(words);
+        }
+      }
+
       setTranscribeProgress(80); // curating viral moments
 
       // Send to Groq LLaMA to identify viral moments
@@ -803,6 +849,14 @@ export const App: React.FC = () => {
                     disabled={isTranscribing}
                   />
 
+                  <GlossaryInput
+                    glossary={glossary}
+                    onChange={handleGlossaryChange}
+                    fixCaptions={fixCaptions}
+                    onChangeFixCaptions={handleFixCaptionsChange}
+                    disabled={isTranscribing}
+                  />
+
                   {isTranscribing ? (
                     <div className="progress-container">
                       <div className="spinner"></div>
@@ -836,6 +890,10 @@ export const App: React.FC = () => {
                   retranscribing={isTranscribing}
                   captionLanguage={captionLanguage}
                   onChangeCaptionLanguage={setCaptionLanguage}
+                  glossary={glossary}
+                  onGlossaryChange={handleGlossaryChange}
+                  fixCaptions={fixCaptions}
+                  onFixCaptionsChange={handleFixCaptionsChange}
                 />
               )}
 
