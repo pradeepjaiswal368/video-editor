@@ -1,7 +1,100 @@
 import { TranscriptionWord, ViralShort, ProjectState, CaptionLanguage } from '../types/video';
-import { hasDevanagari, devanagariToHinglish } from '../utils/hinglish';
+import { hasDevanagari, devanagariToHinglish, canonicalizeHinglish } from '../utils/hinglish';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1';
+
+/* Chat models the editor may use, in preference order. Groq retires models on
+   its own schedule — llama-3.3-70b-versatile was decommissioned 2026-08-16 —
+   so we ask the account which of these it can actually see, and the retry
+   loop below falls back to the next one if a request is rejected anyway. */
+const PREFERRED_CHAT_MODELS = [
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'qwen/qwen3.6-27b'
+];
+
+let cachedChatModels: string[] | null = null;
+
+/** Models this account can use, resolved once per session from GET /models.
+ *  If that call fails (network hiccup), the preference list itself is used —
+ *  postChatCompletion's retry loop still protects us. */
+async function resolveChatModels(apiKey: string): Promise<string[]> {
+  if (cachedChatModels) return cachedChatModels;
+  try {
+    const res = await fetch(`${GROQ_API_URL}/models`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const available = new Set(
+        (data.data ?? []).map((m: { id?: string }) => m.id).filter(Boolean)
+      );
+      const usable = PREFERRED_CHAT_MODELS.filter((id) => available.has(id));
+      if (usable.length > 0) {
+        cachedChatModels = usable;
+        return usable;
+      }
+    }
+  } catch {
+    // Fall through to the default list.
+  }
+  cachedChatModels = [...PREFERRED_CHAT_MODELS];
+  return cachedChatModels;
+}
+
+interface ChatCompletionBody {
+  messages: { role: string; content: string }[];
+  temperature?: number;
+  response_format?: { type: 'json_object' };
+}
+
+/** One chat-completion call. If the model id is rejected (not found on the
+ *  account, or the account lacks access), retries with the next model in the
+ *  preference order. Returns the message content. */
+async function postChatCompletion(
+  apiKey: string,
+  body: ChatCompletionBody
+): Promise<string> {
+  const models = await resolveChatModels(apiKey);
+  let lastModelError: Error | null = null;
+
+  for (const model of models) {
+    const response = await fetch(`${GROQ_API_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({ ...body, model })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error('Groq returned an empty chat completion.');
+      return content;
+    }
+
+    const errorText = await response.text();
+    const modelRejected = response.status === 404 && errorText.includes('model_not_found');
+    if (modelRejected) {
+      lastModelError = new Error(`Groq model "${model}" is unavailable on this account.`);
+      continue;
+    }
+    throw new Error(`Groq chat completion failed: ${errorText || response.statusText}`);
+  }
+
+  throw lastModelError ?? new Error('No Groq chat model available on this account.');
+}
+
+/** Hinglish output conventions that Whisper's prompt biases toward. Kept
+ *  deliberately short (Whisper prompts are token-limited) and concrete —
+ *  example romanizations beat abstract instructions for a model that has
+ *  never been told how Indian creators spell. */
+const HINGLISH_PROMPT_LEAD =
+  'The transcript is Hinglish: Hindi spoken by Indian creators, written in English/Latin letters only — never Devanagari. ' +
+  'Romanize Hindi the way Indian social media writes it, e.g. "aaj", "main", "aapko", "karta hoon", "mujhe", "nahi", "bahut", "accha", "chahiye", "paisa", "bhai", "yaar". ' +
+  'English words keep standard English spelling, e.g. "subscribe", "business", "crore", "lakh", "UPI".';
 
 /**
  * Transcribes the audio WAV blob using Groq Whisper.
@@ -11,11 +104,17 @@ const GROQ_API_URL = 'https://api.groq.com/openai/v1';
  *   Latin script, and any Devanagari that slips through is transliterated.
  * - 'hindi': Whisper auto-detects and returns Devanagari untouched.
  * - 'english': forces English transcription.
+ *
+ * `glossary` lists names, brands and slang the creator wants spelled exactly
+ * right (e.g. "Raj Shamani", "UPI", "crore"). It is injected into the
+ * Whisper prompt as vocabulary hints — the same lever Deepgram's "keyterm
+ * prompting" uses to cut domain WER, and it costs nothing extra.
  */
 export async function transcribeAudio(
   audioBlob: Blob,
   apiKey: string,
-  language: CaptionLanguage = 'hinglish'
+  language: CaptionLanguage = 'hinglish',
+  glossary: string[] = []
 ): Promise<TranscriptionWord[]> {
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.wav');
@@ -26,10 +125,10 @@ export async function transcribeAudio(
     // Whisper auto-detects Hindi and returns Devanagari by default. A prompt
     // biases it toward Hinglish — Hindi spoken, written in Latin script — so
     // captions read as romanized text instead of Hindi letters.
-    formData.append(
-      'prompt',
-      'The transcript is Hinglish: Hindi words written in English/Latin letters, never Devanagari script. For example: "aaj main aapko ek important baat batata hoon".'
-    );
+    const glossaryHint = glossary.length > 0
+      ? ` Spell these names and terms exactly like this: ${glossary.join(', ')}.`
+      : '';
+    formData.append('prompt', HINGLISH_PROMPT_LEAD + glossaryHint);
   } else if (language === 'english') {
     formData.append('language', 'en');
   }
@@ -56,7 +155,7 @@ export async function transcribeAudio(
     for (const segment of data.segments) {
       if (segment.words && segment.words.length > 0) {
         for (const w of segment.words) {
-          // Remove punctuation from start/end of word for clean text matching, but keep it in transcription
+          // Keep Whisper's punctuation on the word for accurate text matching.
           wordsList.push({
             word: w.word,
             start: w.start,
@@ -71,7 +170,7 @@ export async function transcribeAudio(
         const words = segmentText.split(/\s+/);
         const duration = segment.end - segment.start;
         const wordDuration = duration / Math.max(1, words.length);
-        
+
         words.forEach((word: string, index: number) => {
           wordsList.push({
             word: word,
@@ -102,13 +201,155 @@ export async function transcribeAudio(
 
   // Guarantee Hinglish captions: Whisper occasionally still returns Devanagari
   // despite the romanization prompt, so transliterate anything that slipped
-  // through. Latin-script words are left untouched. Only applies in the
-  // Hinglish mode — Hindi-script and English modes keep Whisper's output.
-  return wordsList.map((w) =>
-    language === 'hinglish' && hasDevanagari(w.word)
-      ? { ...w, word: devanagariToHinglish(w.word) }
-      : w
-  );
+  // through. Then normalize every Latin word to its canonical Hinglish
+  // spelling ("achha" → "accha", "mein" → "main"). Hindi-script and English
+  // modes keep Whisper's output as-is.
+  return wordsList.map((w) => {
+    if (language !== 'hinglish') return w;
+    const word = hasDevanagari(w.word) ? devanagariToHinglish(w.word) : w.word;
+    const canonical = canonicalizeHinglish(word);
+    return canonical !== w.word ? { ...w, word: canonical } : w;
+  });
+}
+
+export interface CorrectedTranscription {
+  words: TranscriptionWord[];
+  /** How many words the model actually changed (0 = nothing to fix). */
+  changedCount: number;
+}
+
+/* How many words go on each numbered line sent to the corrector. Small
+   enough that the model keeps line-level word counts honest, large enough
+   that it has real sentence context. */
+const CORRECTION_LINE_SIZE = 12;
+/* Lines per API call — bounds request size on long transcripts. */
+const CORRECTION_CHUNK_LINES = 120;
+
+const CORRECTION_RULES: Record<CaptionLanguage, string> = {
+  hinglish:
+    'Fix the romanized Hinglish spelling to the way Indian creators write captions on social media: "aaj", "main", "aapko", "karta hoon", "mujhe", "nahi", "bahut", "accha", "chahiye", "paisa", "bhai", "yaar", "crore", "lakh". ' +
+    'Fix English words inside the Hinglish to standard English spelling ("subscribe" not "sabskraib", "business" not "bijness").',
+  hindi:
+    'Fix Devanagari spelling, sandhi and homophone errors (e.g. की/कि, है/हैं, में/मैं, और/और). Keep the Devanagari script exactly as Hindi is written.',
+  english:
+    'Fix English spelling, missing punctuation and repeated-word artifacts. Keep standard written English.'
+};
+
+/**
+ * Post-transcription accuracy pass. Whisper is confident but often wrong on
+ * desi audio — wrong romanization, mangled English loanwords, hallucinated
+ * repeated words, missing punctuation. This sends the raw word list to LLaMA
+ * to correct the *text* while keeping Whisper's per-word timestamps intact.
+ *
+ * Alignment trick: words are grouped into numbered lines of fixed size and
+ * the model must return the exact same number of words per line, in order.
+ * Corrections are then mapped back onto the original word objects by index,
+ * so start/end/highlighted/deleted fields are never touched. Any line that
+ * breaks the count contract is left as Whisper wrote it — the pass can make
+ * captions better, never worse.
+ *
+ * `glossary` lists names/terms that must not be altered (spell them exactly).
+ */
+export async function correctTranscription(
+  words: TranscriptionWord[],
+  apiKey: string,
+  language: CaptionLanguage = 'hinglish',
+  glossary: string[] = []
+): Promise<CorrectedTranscription> {
+  // Not worth a model round-trip for a couple of words.
+  if (words.length < 6) return { words, changedCount: 0 };
+
+  // Group words into numbered lines, preserving order.
+  const lines: { start: number; words: string[] }[] = [];
+  for (let i = 0; i < words.length; i += CORRECTION_LINE_SIZE) {
+    lines.push({ start: i, words: words.slice(i, i + CORRECTION_LINE_SIZE).map((w) => w.word) });
+  }
+
+  const glossaryBlock = glossary.length > 0
+    ? `These names and terms are CORRECT — spell them exactly like this and never change them:\n${glossary.join('\n')}\n\n`
+    : '';
+
+  const systemPrompt = `You are an expert subtitle corrector for Indian (desi) video creators.
+Your job: correct the transcription text so the captions read perfectly, WITHOUT changing the audio timing.
+
+${CORRECTION_RULES[language]}
+
+Also:
+- Delete hallucinated words (a word repeated back-to-back is almost always a Whisper artifact — keep one).
+- Fix punctuation attached to words (commas, periods, question marks, apostrophes).
+
+CRITICAL CONTRACT — the output must stay frame-accurate to the audio:
+- Return exactly the same number of words per line as the input, in the same order.
+- Never add, remove, merge, split, or reorder words.
+- Only fix spelling, punctuation and artifacts; never paraphrase.
+
+${glossaryBlock}Respond ONLY with raw JSON matching this structure (no markdown, no commentary):
+{"lines": [["word1", "word2", "..."], ["..."]]}
+Each inner array is one corrected line with the same word count as the input line.`;
+
+  const result: TranscriptionWord[] = words.map((w) => ({ ...w }));
+  let changedCount = 0;
+
+  // Process in chunks so one huge transcript doesn't mean one huge response.
+  for (let c = 0; c < lines.length; c += CORRECTION_CHUNK_LINES) {
+    const chunk = lines.slice(c, c + CORRECTION_CHUNK_LINES);
+    const inputText = chunk.map((l, i) => `${c + i}: ${l.words.join(' ')}`).join('\n');
+
+    let content: string;
+    try {
+      content = await postChatCompletion(apiKey, {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: inputText }
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      });
+    } catch (err) {
+      throw new Error(
+        `Groq caption correction failed: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err }
+      );
+    }
+
+    let parsed: { lines?: unknown[] };
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      console.warn('Caption correction returned unparseable JSON; keeping Whisper words.', content);
+      continue;
+    }
+    if (!parsed.lines || !Array.isArray(parsed.lines)) continue;
+
+    chunk.forEach((line, idx) => {
+      // The model returns corrected lines in the same order as the chunk's
+      // numbered input lines, so chunk-local index maps 1:1.
+      const out = parsed.lines![idx];
+      const correctedLine = Array.isArray(out) ? out : null;
+      // Count contract violated → keep the original line untouched.
+      if (!correctedLine || correctedLine.length !== line.words.length) return;
+      correctedLine.forEach((cw, k) => {
+        const text = typeof cw === 'string' ? cw.trim() : '';
+        if (!text || text === line.words[k]) return;
+        result[line.start + k] = { ...result[line.start + k], word: text };
+        changedCount++;
+      });
+    });
+  }
+
+  // Final consistency pass: whatever the model returned, canonicalize the
+  // Latin Hinglish spellings so the captions follow one convention. The
+  // dictionary is high-confidence, so this can only align, never corrupt.
+  if (language === 'hinglish') {
+    for (let i = 0; i < result.length; i++) {
+      const canonical = canonicalizeHinglish(result[i].word);
+      if (canonical !== result[i].word) {
+        result[i] = { ...result[i], word: canonical };
+      }
+    }
+  }
+
+  return { words: result, changedCount };
 }
 
 /**
@@ -162,31 +403,22 @@ You MUST respond with a JSON object containing a "shorts" array. Do not include 
 }
 If no good segments are found, return an empty array.`;
 
-  const response = await fetch(`${GROQ_API_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+  let content: string;
+  try {
+    content = await postChatCompletion(apiKey, {
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Here is the transcript with timestamps:\n\n${transcriptText}` }
       ],
       temperature: 0.2,
       response_format: { type: 'json_object' }
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Groq AI curation failed: ${errorText || response.statusText}`);
+    });
+  } catch (err) {
+    throw new Error(
+      `Groq AI curation failed: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err }
+    );
   }
-
-  const data = await response.json();
-  const content = data.choices[0]?.message?.content;
-  if (!content) throw new Error('Groq returned empty response during clip curation.');
 
   try {
     const parsed = JSON.parse(content);
@@ -304,31 +536,22 @@ Examples:
 
 Your output MUST be a JSON object with keys "explanation" and "commands". No markdown blocks or extra text. Only JSON.`;
 
-  const response = await fetch(`${GROQ_API_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'llama-3.1-8b-instant', // Fast model for chat interactions
+  let content: string;
+  try {
+    content = await postChatCompletion(apiKey, {
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Current Editor State:\n${JSON.stringify(simplifiedState)}\n\nUser command: "${userCommand}"` }
       ],
       temperature: 0.1,
       response_format: { type: 'json_object' }
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Groq Chat Copilot failed: ${errorText || response.statusText}`);
+    });
+  } catch (err) {
+    throw new Error(
+      `Groq Chat Copilot failed: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err }
+    );
   }
-
-  const data = await response.json();
-  const content = data.choices[0]?.message?.content;
-  if (!content) throw new Error('Groq returned empty chat copilot response.');
 
   return JSON.parse(content) as AICommandResponse;
 }
