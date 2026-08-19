@@ -3108,6 +3108,143 @@ svg { stroke-linecap: round; stroke-linejoin: round; }
   animation: rotate 0.75s linear infinite;
 }
 
+/* ==========================================================================
+   Safe Zone Overlay
+   ========================================================================== */
+.safe-zone-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.safe-zone-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--stroke-mid);
+  border-radius: var(--r-sm);
+  color: var(--text-lo);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t), background-color var(--t);
+}
+
+.safe-zone-toggle:hover {
+  color: var(--text-hi);
+  border-color: var(--stroke-strong);
+}
+
+.safe-zone-toggle.active {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.safe-zone-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 200px;
+  background: var(--bg-panel);
+  border: 1px solid var(--stroke-mid);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  animation: menu-in 0.15s var(--ease) both;
+}
+
+.safe-zone-presets {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.safe-zone-preset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-lo);
+  font-family: var(--display);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t), background-color var(--t);
+}
+
+.safe-zone-preset:hover {
+  color: var(--text-hi);
+  background-color: var(--bg-raised);
+}
+
+.safe-zone-preset.selected {
+  color: var(--accent);
+}
+
+.safe-zone-preset svg {
+  color: var(--green);
+}
+
+.safe-zone-opacity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--stroke);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.safe-zone-opacity input[type='range'] {
+  flex: 1;
+  height: 3px;
+  background: var(--bg-raised);
+  border-radius: var(--r-full);
+  cursor: pointer;
+}
+
+.safe-zone-opacity input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.safe-zone-close {
+  width: 100%;
+  padding: 8px;
+  background: var(--bg-raised);
+  border: none;
+  border-top: 1px solid var(--stroke);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  color: var(--text-hi);
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--t);
+}
+
+.safe-zone-close:hover {
+  background-color: var(--bg-panel-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
