@@ -5,6 +5,8 @@ import { GRADES, GRADE_NONE, paintGradeOverlays } from '../data/grades';
 import { drawMotionOverlays } from '../data/motion';
 import { renderCaptionPhrase } from '../utils/captionRender';
 import { SfxKind, renderSfx } from '../data/sfx';
+import { SafeZone } from './SafeZone';
+import { SafeZonePreset, SAFE_ZONE_PRESETS, renderSafeZone } from '../data/safeZonePresets';
 
 interface VideoPlayerProps {
   state: ProjectState;
@@ -34,6 +36,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [volume, setLocalVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  
+  // Safe zone state
+  const [safeZoneEnabled, setSafeZoneEnabled] = useState(false);
+  const [safeZonePreset, setSafeZonePreset] = useState<SafeZonePreset>('instagram-reels');
+  const [safeZoneOpacity, setSafeZoneOpacity] = useState(100);
 
   /* Playback bookkeeping lives in refs, not state. The draw loop reads these
      every frame; if they were state the effect below would tear down and
@@ -286,6 +293,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
              timeline position, so preview and export stay in sync. */
       drawMotionOverlays(context, overlays || [], playheadRef.current, c.width, c.height);
 
+      // 2c. Safe zone overlay
+      if (safeZoneEnabled) {
+        const preset = SAFE_ZONE_PRESETS.find(p => p.id === safeZonePreset) || SAFE_ZONE_PRESETS[0];
+        renderSafeZone(context, preset, c.width, c.height, safeZoneOpacity);
+      }
+
       // 2c. Fire any sound-effect cue the playhead just crossed.
       if (isPlaying && sfxCues?.length) {
         const now = playheadRef.current;
@@ -364,7 +377,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     // `playhead` is deliberately absent: it changes ~20x/sec and would
     // otherwise cancel and rebuild the rAF loop each time. The loop reads
     // playheadRef instead.
-  }, [isPlaying, clips, transcription, captionStyle, media, videoLoaded, overlays, sfxCues]);
+  }, [isPlaying, clips, transcription, captionStyle, media, videoLoaded, overlays, sfxCues, safeZoneEnabled, safeZonePreset, safeZoneOpacity]);
 
   const handlePlayPause = () => {
     onChangeIsPlaying(!isPlaying);
@@ -399,6 +412,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       <div className="player-header">
         <div className="resolution-badge">Preview • 1080p Crop</div>
         <div className="player-header-actions">
+          <SafeZone
+            enabled={safeZoneEnabled}
+            presetId={safeZonePreset}
+            opacity={safeZoneOpacity}
+            onChangeEnabled={setSafeZoneEnabled}
+            onChangePreset={setSafeZonePreset}
+            onChangeOpacity={setSafeZoneOpacity}
+          />
           <button className="icon-btn-secondary" title="Reframe Grid">
             <Maximize size={16} />
           </button>
