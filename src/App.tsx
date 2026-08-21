@@ -953,7 +953,7 @@ export const App: React.FC = () => {
               <h2>AI Producer</h2>
             </div>
             
-            <h1 className="landing-title">Turn long videos into viral clips with <em>Groq</em></h1>
+            <h1 className="landing-title">Turn videos into viral clips with <em>Groq</em></h1>
             <p className="landing-desc">
               Upload your video, extract speech with Groq Whisper, and let LLaMA auto-crop to 9:16 vertical shorts with engaging kinetic captions.
             </p>
